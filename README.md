@@ -1,4 +1,4 @@
-<h1 align="center">RIPP (Rust Inner Pairing Products)</h1>
+<h1 align="center">NameKZG from RIPP (Rust Inner Pairing Products)</h1>
 
 <p align="center">
     <a href="https://travis-ci.org/scipr-lab/ripp"><img src="https://travis-ci.org/scipr-lab/ripp.svg?branch=master"></a>
@@ -8,6 +8,12 @@
     <a href="https://deps.rs/repo/github/scipr-lab/ripp"><img src="https://deps.rs/repo/github/scipr-lab/ripp/status.svg"></a>
 </p>
 
+## NameKZG
+
+We implement nameKZG following RIPP.
+The code is in [poly_commit.rs](benches/benches/poly_commit.rs).
+
+Below is the readme of RIPP.
 
 ___RIPP___ is a Rust library for proofs about inner pairing products, and applications built atop these. These protocols and applications are described in our paper *"[Proofs for Inner Pairing Products and Applications][ripp]"*
 
@@ -59,3 +65,4 @@ Unless you explicitly state otherwise, any contribution submitted for inclusion 
 [_Proofs for Inner Pairing Products and Applications_][ripp]    
 [Benedikt Bünz](https://www.github.com/bbuenz), Mary Maller, [Pratyush Mishra](https://www.github.com/pratyush), [Psi Vesely](https://www.github.com/psivesely)    
 *IACR ePrint Report 2019/1177*
+

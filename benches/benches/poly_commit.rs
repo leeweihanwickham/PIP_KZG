@@ -74,7 +74,7 @@ fn main() {
 
     // degree from (4^1 - 1) to (4^num_data_points - 1)
     // 4 guarantees that sqrt is power-of-two
-    for degree in (3..num_data_points).map(|i| 4_usize.pow((i + 1) as u32) - 1) {
+    for degree in (13..num_data_points).map(|i| 4_usize.pow((i + 1) as u32) - 1) {
         // Benchmark nameKZG
         {
 
