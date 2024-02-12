@@ -1,4 +1,4 @@
-<h1 align="center">PIP~KZG~ from RIPP</h1>
+<h1 align="center">PIP<sub>KZG</sub> from RIPP</h1>
 
 <p align="center">
     <a href="https://travis-ci.org/scipr-lab/ripp"><img src="https://travis-ci.org/scipr-lab/ripp.svg?branch=master"></a>
@@ -8,9 +8,9 @@
     <a href="https://deps.rs/repo/github/scipr-lab/ripp"><img src="https://deps.rs/repo/github/scipr-lab/ripp/status.svg"></a>
 </p>
 
-## NameKZG
+## PIP<sub>KZG</sub>
 
-We implement nameKZG following RIPP.
+We implement PIP<sub>KZG</sub> following RIPP.
 The code is in [poly_commit.rs](benches/benches/poly_commit.rs).
 
 Below is the readme of RIPP.
