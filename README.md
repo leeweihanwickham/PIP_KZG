@@ -1,4 +1,4 @@
-<h1 align="center">NameKZG from RIPP</h1>
+<h1 align="center">PIP~KZG~ from RIPP</h1>
 
 <p align="center">
     <a href="https://travis-ci.org/scipr-lab/ripp"><img src="https://travis-ci.org/scipr-lab/ripp.svg?branch=master"></a>
