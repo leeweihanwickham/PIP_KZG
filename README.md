@@ -13,6 +13,13 @@
 We implement PIP<sub>KZG</sub> following RIPP.
 The code is in [poly_commit.rs](benches/benches/poly_commit.rs).
 
+To test PIP<sub>KZG</sub>-sqrt, PIP<sub>KZG</sub>-log, KZG, Bunz et al, Run the following code in [here](/benches/benches/poly_commit.rs):
+
+```
+cargo bench --bench poly_commit -- <num_trials> <log_degree_bound>
+
+```
+
 Below is the readme of RIPP.
 
 ## RIPP

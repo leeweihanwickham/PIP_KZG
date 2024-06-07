@@ -5,12 +5,12 @@ use ark_ip_proofs::applications::poly_commit::{
     transparent::UnivariatePolynomialCommitment as TransparentIPA,
     UnivariatePolynomialCommitment as IPA, KZG,
 };
-use ark_poly::polynomial::{
+use ark_poly::{domain::radix2, polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
-};
+}};
 
-use ark_r1cs_std::poly::polynomial::univariate::dense::DensePolynomialVar;
-use ark_std::rand::{rngs::StdRng, SeedableRng};
+use ark_r1cs_std::poly::{self, polynomial::univariate::dense::DensePolynomialVar};
+use ark_std::{log2, rand::{rngs::StdRng, SeedableRng}};
 use csv::Writer;
 
 use blake2::Blake2b;
@@ -25,6 +25,25 @@ use ark_ff::Fp;
 use ark_bls12_381::FrConfig;
 use ark_ff::MontBackend;
 use ark_bls12_381::Config;
+
+fn nearest_power_of_two(num: usize) -> usize {
+    if num.is_power_of_two(){
+        return num;
+    }
+
+    let mut power_of_two = 1;
+    while power_of_two < num {
+        power_of_two <<= 1;
+    }
+
+    let lower_power_of_two = power_of_two >> 1;
+    if num - lower_power_of_two < power_of_two - num {
+        lower_power_of_two
+    }
+    else{
+        power_of_two
+    }
+}
 
 
 fn main() {
@@ -74,11 +93,11 @@ fn main() {
 
     // degree from (4^1 - 1) to (4^num_data_points - 1)
     // 4 guarantees that sqrt is power-of-two
-    for degree in (13..num_data_points).map(|i| 4_usize.pow((i + 1) as u32) - 1) {
-        // Benchmark nameKZG
+    for degree in (6..num_data_points).map(|i| 4_usize.pow((i + 1) as u32) - 1) {
+        // Benchmark PIP-KZG-sqrt
         {
 
-        let degree_sqrt_f64 = (((degree + 1) * 64) as f64).sqrt();
+        let degree_sqrt_f64 = (((degree + 1) * 16) as f64).sqrt();
         let degree_sqrt = (degree_sqrt_f64 as usize) - 1;
         println!("degree_sqrt: {}", degree_sqrt);
         let poly_num = (degree + 1) / (degree_sqrt + 1);
@@ -86,8 +105,10 @@ fn main() {
 
         let mut rng = StdRng::seed_from_u64(0u64);
 
+
         start = Instant::now();
         let (g_alpha_powers, v_srs) = KZG::<Bls12_381>::setup(&mut rng, degree_sqrt).unwrap();
+        let (g_com_alpha_powers, v_com_srs) = KZG::<Bls12_381>::setup(&mut rng, poly_num).unwrap();
         time = start.elapsed().as_millis();
 
         // record element size
@@ -105,7 +126,7 @@ fn main() {
         csv_writer
             .write_record(&[
                 1.to_string(),
-                "namekzg".to_string(),
+                "PIP_kzg-sqrt".to_string(),
                 "setup".to_string(),
                 srs_size.to_string(),
                 time.to_string(),
@@ -150,14 +171,14 @@ fn main() {
             }
 
             let com_poly = UnivariatePolynomial::from_coefficients_vec(field_vec); 
-            let com_poly_com = KZG::<Bls12_381>::commit(&g_alpha_powers, &com_poly).unwrap();
+            let com_poly_com = KZG::<Bls12_381>::commit(&g_com_alpha_powers, &com_poly).unwrap();
 
             time = start.elapsed().as_millis();
 
             csv_writer
                 .write_record(&[
                     i.to_string(),
-                    "namekzg".to_string(),
+                    "PIP_kzg-sqrt".to_string(),
                     "commit".to_string(),
                     size_of_val(&com_poly_com).to_string(),
                     time.to_string(),
@@ -166,8 +187,10 @@ fn main() {
 
             // Open
 
+            let random_field = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
+
             let mut batch_polynomial = &polynomial_vec[0] + &polynomial_vec[1];
-            let mut batch_com: <Bls12_381 as Pairing>::G1 = com_vec[0] + com_vec[1];
+            let mut batch_com: <Bls12_381 as Pairing>::G1 = com_vec[0] + com_vec[1] ;
 
             start = Instant::now();
 
@@ -185,7 +208,7 @@ fn main() {
             csv_writer
                 .write_record(&[
                     i.to_string(),
-                    "namekzg".to_string(),
+                    "PIP_kzg-sqrt".to_string(),
                     "open".to_string(),
                     proof_size.to_string(),
                     time.to_string(),
@@ -209,17 +232,188 @@ fn main() {
                 }
 
                 let com_poly = UnivariatePolynomial::from_coefficients_vec(field_vec); 
-                let com_poly_com = KZG::<Bls12_381>::commit(&g_alpha_powers, &com_poly).unwrap();
+                let com_poly_com = KZG::<Bls12_381>::commit(&g_com_alpha_powers, &com_poly).unwrap();
 
                 let is_valid =
                     KZG::<Bls12_381>::verify(&v_srs, &batch_com, &point, &final_eva, &proof).unwrap();
                 assert!(is_valid);
+
+                let mut batch_com_ver: <Bls12_381 as Pairing>::G1 = com_vec[0] + com_vec[1] * random_field;
+    
+                for j in 2..(poly_num) {
+                    batch_com_ver += com_vec[j] * random_field;
+                }
+                
             }
             time = start.elapsed().as_millis() / 50;
             csv_writer
                 .write_record(&[
                     i.to_string(),
-                    "namekzg".to_string(),
+                    "PIP_kzg-sqrt".to_string(),
+                    "verify".to_string(),
+                    time.to_string(),
+                    "ms".to_string(),
+                ])
+                .unwrap();
+            csv_writer.flush().unwrap();
+            }
+        }
+
+        // Benchmark PIP-KZG-log
+        {
+
+
+        let poly_num = nearest_power_of_two((((degree + 1) as f64).log2() as usize));
+        let degree_m = (degree + 1)/poly_num;
+        println!("degree_m: {}", degree_m);
+        println!("poly_num: {}", poly_num);
+
+        let mut rng = StdRng::seed_from_u64(0u64);
+
+        start = Instant::now();
+        let (g_alpha_powers, v_srs) = KZG::<Bls12_381>::setup(&mut rng, degree_m).unwrap();
+        let (g_com_alpha_powers, v_com_srs) = KZG::<Bls12_381>::setup(&mut rng, poly_num).unwrap();
+        time = start.elapsed().as_millis();
+
+        // record element size
+        // let v_srs_size = size_of_val(&v_srs);
+        // println!("v_srs_size: {}", v_srs_size);
+        let field_size = size_of_val(&<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
+        // println!("field_size: {}", field_size);
+        let G1_size = size_of_val(&v_srs.g);
+        // println!("G1_size: {}", G1_size);
+        let G2_size = size_of_val(&v_srs.h);
+        // println!("G2_size: {}", G2_size);
+
+        let srs_size = (g_alpha_powers.len() + 2) * G1_size + 2 * G2_size;
+
+        csv_writer
+            .write_record(&[
+                1.to_string(),
+                "PIP_kzg-log".to_string(),
+                "setup".to_string(),
+                srs_size.to_string(),
+                time.to_string(),
+            ])
+            .unwrap();
+        csv_writer.flush().unwrap();
+
+        for i in 1..num_trials + 1 {
+
+            let mut polynomial_vec: Vec<ark_poly::univariate::DensePolynomial<Fp<MontBackend<FrConfig, 4>, 4>>> = Vec::with_capacity(poly_num);
+
+            for j in 0..(poly_num) {
+                let polynomial = UnivariatePolynomial::rand(degree_m, &mut rng);
+                // polynomial_coeff_vec
+                polynomial_vec.push(polynomial);
+            }
+
+            let point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
+
+            // let mut eval_vec: Vec<ark_ff::Fp<ark_ff::MontBackend<ark_bls12_381::FrConfig, 4>, 4>> = Vec::with_capacity(poly_num);
+            let mut final_eva = polynomial_vec[0].evaluate(&point);
+            for j in 1..(poly_num) {
+                final_eva += polynomial_vec[j].evaluate(&point);
+            }
+
+            // Commit
+
+            let mut com_vec: Vec<<Bls12_381 as Pairing>::G1> = Vec::with_capacity(poly_num);
+            let mut field_vec: Vec<ark_ff::Fp<ark_ff::MontBackend<ark_bls12_381::FrConfig, 4>, 4>> = Vec::with_capacity(poly_num);
+
+            start = Instant::now();
+
+            for j in 0..(poly_num) {
+                com_vec.push(KZG::<Bls12_381>::commit(&g_alpha_powers, &polynomial_vec[j]).unwrap());
+                let mut hasher = Blake2b::new();
+                // write input message
+                hasher.update(com_vec[j].to_string());
+                // read hash digest and consume hasher
+                let res = hasher.finalize();
+                let res_field: ark_ff::Fp<ark_ff::MontBackend<ark_bls12_381::FrConfig, 4>, 4> = (0..16).into_iter().fold(0u128, |sum, next |sum * 256 + res[next] as u128).into();
+                field_vec.push(res_field);
+            }
+
+            let com_poly = UnivariatePolynomial::from_coefficients_vec(field_vec); 
+            let com_poly_com = KZG::<Bls12_381>::commit(&g_com_alpha_powers, &com_poly).unwrap();
+
+            time = start.elapsed().as_millis();
+
+            csv_writer
+                .write_record(&[
+                    i.to_string(),
+                    "PIP_kzg-log".to_string(),
+                    "commit".to_string(),
+                    size_of_val(&com_poly_com).to_string(),
+                    time.to_string(),
+                ])
+                .unwrap();
+
+            // Open
+
+            let random_field = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
+
+            let mut batch_polynomial = &polynomial_vec[0] + &polynomial_vec[1];
+            let mut batch_com: <Bls12_381 as Pairing>::G1 = com_vec[0] + com_vec[1];
+
+            start = Instant::now();
+
+            for j in 2..(poly_num) {
+                batch_polynomial += &polynomial_vec[j];
+                batch_com += com_vec[j];
+            }
+
+            let proof = (KZG::<Bls12_381>::open(&g_alpha_powers, &batch_polynomial, &point).unwrap());
+
+            time = start.elapsed().as_millis();
+
+            let proof_size = poly_num * (G1_size + field_size) + G1_size;
+
+            csv_writer
+                .write_record(&[
+                    i.to_string(),
+                    "PIP_kzg-log".to_string(),
+                    "open".to_string(),
+                    proof_size.to_string(),
+                    time.to_string(),
+                ])
+                .unwrap();
+
+            // Verify
+            std::thread::sleep(Duration::from_millis(5000));
+
+            start = Instant::now();
+            for _ in 0..50 {
+                let mut field_vec: Vec<ark_ff::Fp<ark_ff::MontBackend<ark_bls12_381::FrConfig, 4>, 4>> = Vec::with_capacity(poly_num);
+                for j in 0..(poly_num) {
+                    let mut hasher = Blake2b::new();
+                    // write input message
+                    hasher.update(com_vec[j].to_string());
+                    // read hash digest and consume hasher
+                    let res = hasher.finalize();
+                    let res_field: ark_ff::Fp<ark_ff::MontBackend<ark_bls12_381::FrConfig, 4>, 4> = (0..16).into_iter().fold(0u128, |sum, next |sum * 256 + res[next] as u128).into();
+                    field_vec.push(res_field);
+                }
+
+                let com_poly = UnivariatePolynomial::from_coefficients_vec(field_vec); 
+                let com_poly_com = KZG::<Bls12_381>::commit(&g_com_alpha_powers, &com_poly).unwrap();
+
+                let is_valid =
+                    KZG::<Bls12_381>::verify(&v_srs, &batch_com, &point, &final_eva, &proof).unwrap();
+                assert!(is_valid);
+
+                let mut batch_com_ver: <Bls12_381 as Pairing>::G1 = com_vec[0] + com_vec[1] * random_field;
+    
+                for j in 2..(poly_num) {
+                    batch_com_ver += com_vec[j] * random_field;
+                }
+                
+            }
+            time = start.elapsed().as_millis() / 50;
+            csv_writer
+                .write_record(&[
+                    i.to_string(),
+                    "PIP_kzg-log".to_string(),
                     "verify".to_string(),
                     time.to_string(),
                     "ms".to_string(),
