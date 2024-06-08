@@ -17,7 +17,6 @@ To test PIP<sub>KZG</sub>-sqrt, PIP<sub>KZG</sub>-log, KZG, Bunz et al, Run the 
 
 ```
 cargo bench --bench poly_commit -- <num_trials> <log_degree_bound>
-
 ```
 
 Below is the readme of RIPP.

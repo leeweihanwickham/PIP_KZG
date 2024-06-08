@@ -45,7 +45,6 @@ fn nearest_power_of_two(num: usize) -> usize {
     }
 }
 
-
 fn main() {
     // // A test for Blake2b
     // let mut hasher = Blake2b::new();
@@ -91,9 +90,9 @@ fn main() {
     println!("G2_size: 288 bytes");
     println!("GT_size: 576 bytes");
 
-    // degree from (4^1 - 1) to (4^num_data_points - 1)
+    // degree from (4^(i+1) - 1) to (4^num_data_points - 1)
     // 4 guarantees that sqrt is power-of-two
-    for degree in (6..num_data_points).map(|i| 4_usize.pow((i + 1) as u32) - 1) {
+    for degree in (3..num_data_points).map(|i| 4_usize.pow((i + 1) as u32) - 1) {
         // Benchmark PIP-KZG-sqrt
         {
 
@@ -121,7 +120,7 @@ fn main() {
         let G2_size = size_of_val(&v_srs.h);
         // println!("G2_size: {}", G2_size);
 
-        let srs_size = (g_alpha_powers.len() + 2) * G1_size + 2 * G2_size;
+        let srs_size = (g_alpha_powers.len() + g_com_alpha_powers.len()) * G1_size + 2 * G2_size;
 
         csv_writer
             .write_record(&[
@@ -145,11 +144,15 @@ fn main() {
             }
 
             let point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
+            let alpha = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
+            // <Bls12_381 as Pairing>::ScalarField::from(1);
 
             // let mut eval_vec: Vec<ark_ff::Fp<ark_ff::MontBackend<ark_bls12_381::FrConfig, 4>, 4>> = Vec::with_capacity(poly_num);
-            let mut final_eva = polynomial_vec[0].evaluate(&point);
+            let mut final_eva = polynomial_vec[0].evaluate(&point) * alpha;
+            let mut inter_alpha = alpha * alpha;
             for j in 1..(poly_num) {
-                final_eva += polynomial_vec[j].evaluate(&point);
+                final_eva += polynomial_vec[j].evaluate(&point) * inter_alpha;
+                inter_alpha *= alpha;
             }
 
             // Commit
@@ -187,16 +190,26 @@ fn main() {
 
             // Open
 
-            let random_field = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
-
-            let mut batch_polynomial = &polynomial_vec[0] + &polynomial_vec[1];
-            let mut batch_com: <Bls12_381 as Pairing>::G1 = com_vec[0] + com_vec[1] ;
-
             start = Instant::now();
 
+            let mut polynomial_vec_rlc: Vec<ark_poly::univariate::DensePolynomial<Fp<MontBackend<FrConfig, 4>, 4>>> = Vec::with_capacity(poly_num);
+            inter_alpha = alpha;
+
+            for i in 0..(poly_num) {
+                let mut vec_rlc: Vec<Fp<MontBackend<FrConfig, 4>, 4>> = polynomial_vec[i].coeffs.clone();
+                for j in 0..(vec_rlc.len()){
+                    vec_rlc[j] *= inter_alpha;
+                }
+                polynomial_vec_rlc.push(UnivariatePolynomial::from_coefficients_vec(vec_rlc));
+                inter_alpha *= alpha;
+            }
+
+            let mut batch_polynomial = &polynomial_vec_rlc[0] + &polynomial_vec_rlc[1];
+            let mut batch_com: <Bls12_381 as Pairing>::G1 = com_vec[0] + com_vec[1] ;
+
             for j in 2..(poly_num) {
-                batch_polynomial += &polynomial_vec[j];
-                batch_com += com_vec[j];
+                batch_polynomial += &polynomial_vec_rlc[j];
+                // batch_com += com_vec[j];
             }
 
             let proof = (KZG::<Bls12_381>::open(&g_alpha_powers, &batch_polynomial, &point).unwrap());
@@ -234,15 +247,17 @@ fn main() {
                 let com_poly = UnivariatePolynomial::from_coefficients_vec(field_vec); 
                 let com_poly_com = KZG::<Bls12_381>::commit(&g_com_alpha_powers, &com_poly).unwrap();
 
-                let is_valid =
-                    KZG::<Bls12_381>::verify(&v_srs, &batch_com, &point, &final_eva, &proof).unwrap();
-                assert!(is_valid);
-
-                let mut batch_com_ver: <Bls12_381 as Pairing>::G1 = com_vec[0] + com_vec[1] * random_field;
+                inter_alpha = alpha;
+                let mut batch_com_ver: <Bls12_381 as Pairing>::G1 = com_vec[0] * inter_alpha;
     
-                for j in 2..(poly_num) {
-                    batch_com_ver += com_vec[j] * random_field;
+                for j in 1..(poly_num) {
+                    inter_alpha *= alpha;
+                    batch_com_ver += com_vec[j] * inter_alpha;
                 }
+
+                let is_valid =
+                KZG::<Bls12_381>::verify(&v_srs, &batch_com_ver, &point, &final_eva, &proof).unwrap();
+                assert!(is_valid);
                 
             }
             time = start.elapsed().as_millis() / 50;
@@ -285,7 +300,7 @@ fn main() {
         let G2_size = size_of_val(&v_srs.h);
         // println!("G2_size: {}", G2_size);
 
-        let srs_size = (g_alpha_powers.len() + 2) * G1_size + 2 * G2_size;
+        let srs_size = (g_alpha_powers.len() + g_com_alpha_powers.len()) * G1_size + 2 * G2_size;
 
         csv_writer
             .write_record(&[
@@ -309,11 +324,14 @@ fn main() {
             }
 
             let point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
+            let alpha = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
 
             // let mut eval_vec: Vec<ark_ff::Fp<ark_ff::MontBackend<ark_bls12_381::FrConfig, 4>, 4>> = Vec::with_capacity(poly_num);
-            let mut final_eva = polynomial_vec[0].evaluate(&point);
+            let mut inter_alpha = alpha;
+            let mut final_eva = polynomial_vec[0].evaluate(&point) * alpha;
             for j in 1..(poly_num) {
-                final_eva += polynomial_vec[j].evaluate(&point);
+                inter_alpha *= alpha;
+                final_eva += polynomial_vec[j].evaluate(&point) * inter_alpha;
             }
 
             // Commit
@@ -351,16 +369,26 @@ fn main() {
 
             // Open
 
-            let random_field = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
-
-            let mut batch_polynomial = &polynomial_vec[0] + &polynomial_vec[1];
-            let mut batch_com: <Bls12_381 as Pairing>::G1 = com_vec[0] + com_vec[1];
-
             start = Instant::now();
 
+            let mut polynomial_vec_rlc: Vec<ark_poly::univariate::DensePolynomial<Fp<MontBackend<FrConfig, 4>, 4>>> = Vec::with_capacity(poly_num);
+            inter_alpha = alpha;
+
+            for i in 0..(poly_num) {
+                let mut vec_rlc: Vec<Fp<MontBackend<FrConfig, 4>, 4>> = polynomial_vec[i].coeffs.clone();
+                for j in 0..(vec_rlc.len()){
+                    vec_rlc[j] *= inter_alpha;
+                }
+                polynomial_vec_rlc.push(UnivariatePolynomial::from_coefficients_vec(vec_rlc));
+                inter_alpha *= alpha;
+            }
+
+            let mut batch_polynomial = &polynomial_vec_rlc[0] + &polynomial_vec_rlc[1];
+            let mut batch_com: <Bls12_381 as Pairing>::G1 = com_vec[0] + com_vec[1] ;
+
             for j in 2..(poly_num) {
-                batch_polynomial += &polynomial_vec[j];
-                batch_com += com_vec[j];
+                batch_polynomial += &polynomial_vec_rlc[j];
+                // batch_com += com_vec[j];
             }
 
             let proof = (KZG::<Bls12_381>::open(&g_alpha_powers, &batch_polynomial, &point).unwrap());
@@ -398,17 +426,19 @@ fn main() {
                 let com_poly = UnivariatePolynomial::from_coefficients_vec(field_vec); 
                 let com_poly_com = KZG::<Bls12_381>::commit(&g_com_alpha_powers, &com_poly).unwrap();
 
-                let is_valid =
-                    KZG::<Bls12_381>::verify(&v_srs, &batch_com, &point, &final_eva, &proof).unwrap();
-                assert!(is_valid);
-
-                let mut batch_com_ver: <Bls12_381 as Pairing>::G1 = com_vec[0] + com_vec[1] * random_field;
+                inter_alpha = alpha;
+                let mut batch_com_ver: <Bls12_381 as Pairing>::G1 = com_vec[0] * inter_alpha;
     
-                for j in 2..(poly_num) {
-                    batch_com_ver += com_vec[j] * random_field;
+                for j in 1..(poly_num) {
+                    inter_alpha *= alpha;
+                    batch_com_ver += com_vec[j] * inter_alpha;
                 }
-                
+
+                let is_valid =
+                KZG::<Bls12_381>::verify(&v_srs, &batch_com_ver, &point, &final_eva, &proof).unwrap();
+                assert!(is_valid);  
             }
+
             time = start.elapsed().as_millis() / 50;
             csv_writer
                 .write_record(&[
